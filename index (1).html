@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fútbol con criterio</title>
+<style>
+:root{--bg:#fff;--fg:#1c1c1e;--mu:#6b6b70;--card:#f3f3f5;--ac:#0a7d4b;--bad:#c0392b;--bd:#d8d8dc}
+@media (prefers-color-scheme:dark){:root{--bg:#121214;--fg:#eee;--mu:#9a9aa0;--card:#1e1e22;--ac:#3ecf8e;--bad:#ff6b5e;--bd:#333}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 system-ui,sans-serif}
+main{max-width:640px;margin:0 auto;padding:12px}
+.card{background:var(--card);border-radius:10px;padding:12px;margin:10px 0}
+select,input,button{font:inherit;padding:9px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--fg);width:100%;box-sizing:border-box;margin-top:6px}
+button{background:var(--ac);color:#fff;border:0}
+.g{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;font-size:14px}
+.mu{color:var(--mu);font-size:13px}.ok{color:var(--ac)}.bad{color:var(--bad)}
+.f span{display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;border-radius:4px;color:#fff;font-size:12px;margin-right:3px}
+.G{background:#0a7d4b}.E{background:#8a8a90}.P{background:#c0392b}
+</style></head><body><main>
+<h1>⚽ Fútbol con criterio</h1>
+<select id="lg"><option value="PL">Premier League</option><option value="CL">Champions League</option><option value="PD">LaLiga</option></select>
+<div id="out" class="mu">Cargando...</div>
+<div class="card"><b>Calculadora de valor</b>
+<input id="od" type="number" step="0.01" placeholder="Cuota (ej: 2.10)">
+<input id="pr" type="number" placeholder="Tu probabilidad estimada en % (ej: 55)">
+<button id="ca">Calcular</button><div id="vr"></div></div>
+<p class="mu">Las estadísticas describen el pasado, no predicen. Ninguna apuesta es segura. Apostá solo lo que puedas perder y poné un límite antes de jugar.</p>
+<script>
+const $=id=>document.getElementById(id);
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const get=async q=>{const r=await fetch("/.netlify/functions/fd?p="+encodeURIComponent(q));if(!r.ok)throw new Error(r.status);return (await r.json()).matches};
+const res=r=>r.f>r.a?"G":r.f<r.a?"P":"E";
+const pc=(n,d)=>d?Math.round(100*n/d)+"%":"-";
+function card(name,R){
+  const n=R.length;if(!n)return`<div><b>${esc(name)}</b><div class="mu">Sin partidos</div></div>`;
+  let gf=0,ga=0,o=0,b=0,cs=0;R.forEach(r=>{gf+=r.f;ga+=r.a;if(r.f+r.a>2)o++;if(r.f&&r.a)b++;if(!r.a)cs++});
+  const f=res(R[0]);let st=0;while(st<n&&res(R[st])===f)st++;
+  const sp=h=>{const q=R.filter(r=>r.h===h);return q.length?q.filter(r=>res(r)==="G").length+"G de "+q.length:"-"};
+  return`<div><b>${esc(name)}</b><div class="f" style="margin:6px 0">${R.slice(0,5).map(r=>`<span class="${res(r)}">${res(r)}</span>`).join("")}</div>
+  <div class="g"><div>Racha: ${st} ${f}</div><div>Partidos: ${n}</div><div>Goles a favor: ${(gf/n).toFixed(1)}</div><div>Goles en contra: ${(ga/n).toFixed(1)}</div>
+  <div>+2,5 goles: ${pc(o,n)}</div><div>Ambos marcan: ${pc(b,n)}</div><div>Arco en cero: ${pc(cs,n)}</div><div>Local: ${sp("L")}</div><div>Visitante: ${sp("V")}</div></div></div>`;
+}
+async function load(){
+  const lg=$("lg").value;$("out").textContent="Cargando...";
+  try{
+    const [fin,nxt]=await Promise.all([get(`competitions/${lg}/matches?status=FINISHED`),get(`competitions/${lg}/matches?status=SCHEDULED,TIMED`)]);
+    const T={};
+    fin.sort((a,b)=>new Date(b.utcDate)-new Date(a.utcDate)).forEach(m=>{
+      const h=m.score.fullTime.home,a=m.score.fullTime.away;if(h==null||a==null)return;
+      (T[m.homeTeam.name]=T[m.homeTeam.name]||[]).push({f:h,a:a,h:"L"});
+      (T[m.awayTeam.name]=T[m.awayTeam.name]||[]).push({f:a,a:h,h:"V"});
+    });
+    nxt.sort((a,b)=>new Date(a.utcDate)-new Date(b.utcDate));
+    $("out").innerHTML=nxt.slice(0,8).map(m=>`<div class="card"><b>${esc(m.homeTeam.name)} vs ${esc(m.awayTeam.name)}</b>
+      <div class="mu">${new Date(m.utcDate).toLocaleString("es-AR",{dateStyle:"short",timeStyle:"short"})}</div>
+      ${card(m.homeTeam.name,T[m.homeTeam.name]||[])}<hr style="border:0;border-top:1px solid var(--bd)">${card(m.awayTeam.name,T[m.awayTeam.name]||[])}</div>`).join("")||"No hay partidos próximos.";
+  }catch(e){$("out").innerHTML='<span class="bad">No se pudieron cargar los datos ('+esc(e.message)+'). Revisá la clave de API y los límites del plan.</span>'}
+}
+$("lg").onchange=load;
+$("ca").onclick=()=>{const o=+$("od").value,p=+$("pr").value/100;
+  if(!(o>1)||!(p>0&&p<1)){$("vr").textContent="Revisá los datos.";return}
+  const ev=p*o-1;
+  $("vr").innerHTML=`<p>Probabilidad implícita: <b>${(100/o).toFixed(1)}%</b><br>Valor esperado por $1: <b class="${ev>0?"ok":"bad"}">${ev>=0?"+":""}${ev.toFixed(3)}</b></p>`+(ev>0?'<p class="ok">Hay ventaja solo si tu estimación es correcta.</p>':'<p class="bad">Sin valor: a la larga se pierde plata.</p>')};
+load();
+</script></main></body></html>
