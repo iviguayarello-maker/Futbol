@@ -51,4 +51,13 @@ async function load(){
     nxt.sort((a,b)=>new Date(a.utcDate)-new Date(b.utcDate));
     $("out").innerHTML=nxt.slice(0,8).map(m=>`<div class="card"><b>${esc(m.homeTeam.name)} vs ${esc(m.awayTeam.name)}</b>
       <div class="mu">${new Date(m.utcDate).toLocaleString("es-AR",{dateStyle:"short",timeStyle:"short"})}</div>
-      ${card(m.homeTeam.name,T[m.homeTeam.name]||[])}<hr style="border:0;border-top:1px solid var(--bd)">${card(m.awayTea
+      ${card(m.homeTeam.name,T[m.homeTeam.name]||[])}<hr style="border:0;border-top:1px solid var(--bd)">${card(m.awayTeam.name,T[m.awayTeam.name]||[])}</div>`).join("")||"No hay partidos próximos.";
+  }catch(e){$("out").innerHTML='<span class="bad">No se pudieron cargar los datos ('+esc(e.message)+'). Revisá la clave de API y los límites del plan.</span>'}
+}
+$("lg").onchange=load;
+$("ca").onclick=()=>{const o=+$("od").value,p=+$("pr").value/100;
+  if(!(o>1)||!(p>0&&p<1)){$("vr").textContent="Revisá los datos.";return}
+  const ev=p*o-1;
+  $("vr").innerHTML=`<p>Probabilidad implícita: <b>${(100/o).toFixed(1)}%</b><br>Valor esperado por $1: <b class="${ev>0?"ok":"bad"}">${ev>=0?"+":""}${ev.toFixed(3)}</b></p>`+(ev>0?'<p class="ok">Hay ventaja solo si tu estimación es correcta.</p>':'<p class="bad">Sin valor: a la larga se pierde plata.</p>')};
+load();
+</script></main></body></html>
