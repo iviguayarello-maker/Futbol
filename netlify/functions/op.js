@@ -10,7 +10,8 @@ exports.handler = async (e) => {
     if (!/^(fixtures|markets|odds)(\?[A-Za-z0-9=&,_.:-]*)?$/.test(p)) return json(400, { error: "pedido no válido" });
     if (!process.env.ODDSPAPI_KEY) return json(500, { error: "Falta la variable ODDSPAPI_KEY en Netlify" });
 
-    const url = "https://api.oddspapi.io/v4/" + p + (p.includes("?") ? "&" : "?") + "apiKey=" + encodeURIComponent(process.env.ODDSPAPI_KEY);
+    const pp = p.replace(/&bookmakers=[^&]*/, "");
+    const url = "https://api.oddspapi.io/v4/" + pp + (pp.includes("?") ? "&" : "?") + "apiKey=" + encodeURIComponent(process.env.ODDSPAPI_KEY);
     const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 9000);
     let r;
     try { r = await fetch(url, { signal: ctl.signal }); } finally { clearTimeout(tm); }
@@ -32,11 +33,23 @@ exports.handler = async (e) => {
       return json(200, out);
     }
     if (p.startsWith("odds")) {
-      const bk = (p.match(/bookmakers=([a-z0-9.,_-]+)/) || [])[1] || "betano";
-      const bo = d.bookmakerOdds || {};
-      const keep = {}; bk.split(",").forEach(k => { if (bo[k]) keep[k] = bo[k]; });
-      if (q.debug) return json(200, { casas: Object.keys(bo), mercadosBetano: keep.betano ? Object.keys(keep.betano.markets || {}).slice(0, 40) : [] });
-      return json(200, { fixtureId: d.fixtureId, bookmakerOdds: keep });
+      const want = new Set(String(q.mk || "101,104,1010").split(",").filter(Boolean));
+      const bo = d.bookmakerOdds || {}, out = {};
+      for (const [bk, v] of Object.entries(bo)) {
+        if (!v || v.bookmakerIsActive === false || v.suspended) continue;
+        const ms = {};
+        for (const [mid, m] of Object.entries(v.markets || {})) {
+          if (!want.has(mid)) continue;
+          const oc = {};
+          for (const [oid, o] of Object.entries((m && m.outcomes) || {})) {
+            const pl = o && o.players && o.players["0"];
+            if (pl && pl.active !== false && pl.price > 1) oc[oid] = pl.price;
+          }
+          if (Object.keys(oc).length) ms[mid] = oc;
+        }
+        if (Object.keys(ms).length) out[bk] = ms;
+      }
+      return json(200, { fixtureId: d.fixtureId, odds: out, totalCasas: Object.keys(bo).length });
     }
     if (p.startsWith("markets")) {
       const L = Array.isArray(d) ? d : [];
