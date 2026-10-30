@@ -46,7 +46,7 @@ exports.handler = async (e) => {
         headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
         body: JSON.stringify({
           model: process.env.AI_MODEL || "claude-haiku-5-5",
-          max_tokens: 600,
+          max_tokens: 1500,
           system: SYSTEM + "\n\nDatos actuales de la app:\n" + (context || "(sin datos)"),
           messages: fixed
         })
@@ -55,7 +55,11 @@ exports.handler = async (e) => {
     const d = await r.json().catch(() => ({}));
     if (!r.ok) return json(r.status, { error: "La IA respondió " + r.status + ((d.error && d.error.message) ? ": " + d.error.message : "") });
     const text = (d.content || []).filter(c => c.type === "text").map(c => c.text).join("\n").trim();
-    return json(200, { text: text || "No tengo una respuesta para eso." });
+    if (!text) {
+      const tipos = (d.content || []).map(c => c.type).join(",") || "ninguno";
+      return json(502, { error: `La IA respondió vacío (motivo: ${d.stop_reason || "?"}, bloques: ${tipos}, modelo: ${d.model || "?"})` });
+    }
+    return json(200, { text });
   } catch (err) {
     return json(502, { error: err.name === "AbortError" ? "La IA tardó demasiado. Probá con una pregunta más corta." : "Error: " + err.message });
   }
