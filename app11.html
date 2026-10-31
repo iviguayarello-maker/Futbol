@@ -193,13 +193,16 @@ const ODSRC={};
 const BKS="betano,betway,pokerstars.es,leovegas.it,sportwetten.de,megapari,betus,fliff,quigioco.it,limitless-ex";
 const errTxt=async r=>{let m="";try{const j=await r.json();m=(j.error||"")+(j.detalle?" · "+String(j.detalle).replace(/<[^>]*>/g,"").slice(0,90):"")}catch(e){}return r.status+(m?": "+m:"")};
 const oddsCall=async(fid,mk)=>{
-  for(const bk of [BKS,"betano"]){
+  // 1) casas de tu plan  2) sin filtro (como antes)  3) solo Betano. Sigue si la respuesta viene vacía o con 403.
+  let last=null,empty=null;
+  for(const bk of [BKS,"","betano"]){
     await gate();
-    const r=await fetch("/.netlify/functions/op?p="+encodeURIComponent(`odds?fixtureId=${fid}&bookmakers=${bk}`)+"&mk="+mk);
-    if(r.ok)return r.json();
-    const msg=await errTxt(r);
-    if(r.status!==403||bk==="betano")throw new Error(msg);
+    const r=await fetch("/.netlify/functions/op?p="+encodeURIComponent(`odds?fixtureId=${fid}`+(bk?`&bookmakers=${bk}`:""))+"&mk="+mk);
+    if(r.ok){const j=await r.json();if(Object.keys(j.odds||{}).length)return j;if(!empty||j.totalCasas)empty=j;continue}
+    last=await errTxt(r);if(r.status!==403)throw new Error(last);
   }
+  if(empty)return empty;
+  throw new Error(last||"sin respuesta");
 };
 const HIST=["betano,betway,megapari","limitless-ex,fliff,betus","pokerstars.es,leovegas.it,sportwetten.de"];
 const histCall=async(fid,mk,utc)=>{
@@ -230,10 +233,11 @@ async function oddsFor(id,h,a,utc){
   await catalog();
   const R={};Object.keys(OPMAP).forEach(k=>{const r=resolve(k);if(r)R[k]=r});
   if(!R["1"])Object.assign(R,{"1":["101","101"],X:["101","102"],"2":["101","103"],O25:["1010","1010"],U25:["1010","1011"],B:["104","104"],N:["104","105"]});
-  const mk=[...new Set(Object.values(R).map(r=>r[0]))].join(",");
+  const FIX={"1":["101","101"],X:["101","102"],"2":["101","103"],B:["104","104"],N:["104","105"],O05:["106","106"],U05:["106","107"],O25:["1010","1010"],U25:["1010","1011"]};
+  const mk=[...new Set([...Object.values(R).map(r=>r[0]),"101","104","106","1010"])].join(",");
   const od=started?await histCall(best.fixtureId||best.id,mk,utc):await oddsCall(best.fixtureId||best.id,mk);
   const books=od.odds||{},keys=Object.keys(books);
-  if(!keys.length)return {ok:false,msg:started?"No encontré cuotas de antes del inicio para este partido.":"Ninguna casa publicó cuotas para este partido todavía."};
+  if(!keys.length)return {ok:false,msg:started?"No encontré cuotas de antes del inicio para este partido.":(od.totalCasas?`OddsPapi devolvió ${od.totalCasas} casa(s) (${(od.casas||[]).join(", ")}) pero sin estos mercados. Tiene: ${(od.mercados||[]).join(",")||"ninguno"} · busqué: ${(od.pedidos||[]).join(",")}`:"Ninguna casa de tu plan publicó cuotas para este partido todavía.")};
   const o={},src={};
   Object.entries(R).forEach(([k,[m,x]])=>{
     const have=keys.filter(b=>books[b][m]&&books[b][m][x]);if(!have.length)return;
@@ -241,6 +245,8 @@ async function oddsFor(id,h,a,utc){
     if(pickB){o[k]=books[pickB][m][x];src[k]=BKNAME(pickB)}
     else{o[k]=+med(have.map(b=>books[b][m][x])).toFixed(2);src[k]=have.length>1?`mediana de ${have.length} casas`:BKNAME(have[0])}
   });
+  Object.entries(FIX).forEach(([k,[m,x]])=>{if(o[k])return;const have=keys.filter(b=>books[b][m]&&books[b][m][x]);if(!have.length)return;
+    let pb=null;for(const re of PREF){pb=have.find(b=>re.test(b));if(pb)break}pb=pb||have[0];o[k]=books[pb][m][x];src[k]=BKNAME(pb)});
   if(!Object.keys(o).length)return {ok:false,msg:"Las casas no ofrecen estos mercados para este partido."};
   if(started)Object.keys(src).forEach(k=>src[k]+=" · cierre");
   OD[id]=o;ODSRC[id]=src;LS.set("op_od3_"+id,{o,src},(started?24:2)*36e5);
@@ -485,7 +491,7 @@ async function oddsForNBA2(id,h,a,utc){
   const mk=[...new Set(Object.values(R).map(r=>r[0]))].join(",");
   const od=started?await histCall(best.fixtureId||best.id,mk,utc):await oddsCall(best.fixtureId||best.id,mk);
   const books=od.odds||{};
-  if(!Object.keys(books).length)return{ok:false,msg:started?"No encontré cuotas de antes del inicio para este partido.":"Ninguna casa publicó cuotas para este partido todavía."};
+  if(!Object.keys(books).length)return{ok:false,msg:started?"No encontré cuotas de antes del inicio para este partido.":(od.totalCasas?`OddsPapi devolvió ${od.totalCasas} casa(s) (${(od.casas||[]).join(", ")}) pero sin estos mercados. Tiene: ${(od.mercados||[]).join(",")||"ninguno"} · busqué: ${(od.pedidos||[]).join(",")}`:"Ninguna casa de tu plan publicó cuotas para este partido todavía.")};
   const {o,src}=pickPrices(books,R);
   if(!Object.keys(o).length)return{ok:false,msg:"Las casas no ofrecen estos mercados para este partido."};
   if(started)Object.keys(src).forEach(k=>src[k]+=" · cierre");
