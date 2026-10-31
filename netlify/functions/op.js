@@ -53,7 +53,8 @@ exports.handler = async (e) => {
     }
     if (p.startsWith("markets")) {
       const L = Array.isArray(d) ? d : [];
-      return json(200, L.filter(m => !m.sportId || m.sportId === 10).map(m => ({ marketId: m.marketId, marketName: m.marketName, handicap: m.handicap, period: m.period, sportId: m.sportId, outcomes: (m.outcomes || []).map(o => ({ outcomeId: o.outcomeId, outcomeName: o.outcomeName })) })));
+      const sp = +((p.match(/sportId=(\d+)/) || [])[1] || 10);
+      return json(200, L.filter(m => !m.sportId || m.sportId === sp).map(m => ({ marketId: m.marketId, marketName: m.marketName, handicap: m.handicap, period: m.period, sportId: m.sportId, outcomes: (m.outcomes || []).map(o => ({ outcomeId: o.outcomeId, outcomeName: o.outcomeName })) })));
     }
     return json(200, d);
   } catch (err) {
