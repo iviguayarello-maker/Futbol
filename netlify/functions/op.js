@@ -7,7 +7,7 @@ exports.handler = async (e) => {
   try {
     const q = e.queryStringParameters || {};
     const p = q.p || "";
-    if (!/^(fixtures|markets|odds)(\?[A-Za-z0-9=&,_.:-]*)?$/.test(p)) return json(400, { error: "pedido no válido" });
+    if (!/^(fixtures|markets|odds|historical-odds)(\?[A-Za-z0-9=&,_.:-]*)?$/.test(p)) return json(400, { error: "pedido no válido" });
     if (!process.env.ODDSPAPI_KEY) return json(500, { error: "Falta la variable ODDSPAPI_KEY en Netlify" });
 
     const pp = p;
@@ -31,6 +31,29 @@ exports.handler = async (e) => {
       }));
       if (q.debug) return json(200, { total: L.length, camposDelPrimero: L[0] ? Object.keys(L[0]) : [], ejemplo: out.slice(0, 3) });
       return json(200, out);
+    }
+    if (p.startsWith("historical-odds")) {
+      // Cuota de cierre: el último precio publicado antes del inicio del partido.
+      const want = new Set(String(q.mk || "101,104,1010").split(",").filter(Boolean));
+      const T = q.t ? Date.parse(q.t) : Infinity;
+      const bo = d.bookmakers || d.bookmakerOdds || {}, out = {};
+      for (const [bk, v] of Object.entries(bo)) {
+        const ms = {};
+        for (const [mid, m] of Object.entries((v && v.markets) || {})) {
+          if (!want.has(mid)) continue;
+          const oc = {};
+          for (const [oid, o] of Object.entries((m && m.outcomes) || {})) {
+            let sn = o && o.players && o.players["0"];
+            if (!Array.isArray(sn)) sn = sn ? [sn] : [];
+            let best = null;
+            for (const x of sn) { const ts = Date.parse(x.createdAt || x.timestamp || 0); if (x && x.price > 1 && x.active !== false && (!(ts > 0) || ts <= T)) { if (!best || ts >= best.ts) best = { ts, price: x.price }; } }
+            if (best) oc[oid] = best.price;
+          }
+          if (Object.keys(oc).length) ms[mid] = oc;
+        }
+        if (Object.keys(ms).length) out[bk] = ms;
+      }
+      return json(200, { fixtureId: d.fixtureId, odds: out, hist: true });
     }
     if (p.startsWith("odds")) {
       const want = new Set(String(q.mk || "101,104,1010").split(",").filter(Boolean));
