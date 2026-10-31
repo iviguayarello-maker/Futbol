@@ -72,7 +72,8 @@ exports.handler = async (e) => {
         }
         if (Object.keys(ms).length) out[bk] = ms;
       }
-      return json(200, { fixtureId: d.fixtureId, odds: out, totalCasas: Object.keys(bo).length });
+      const first = Object.values(bo)[0];
+      return json(200, { fixtureId: d.fixtureId, odds: out, totalCasas: Object.keys(bo).length, casas: Object.keys(bo).slice(0, 8), mercados: first && first.markets ? Object.keys(first.markets).slice(0, 12) : [], pedidos: [...want].slice(0, 12) });
     }
     if (p.startsWith("markets")) {
       const L = Array.isArray(d) ? d : [];
