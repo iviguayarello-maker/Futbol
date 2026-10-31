@@ -48,19 +48,22 @@ exports.handler = async (e) => {
 
     const context = String(b.context || "").slice(0, 7000);
     const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 9500);
+    const call = extra => fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      signal: ctl.signal,
+      headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify(Object.assign({
+        model: process.env.AI_MODEL || "claude-haiku-5-5",
+        max_tokens: 1200,
+        system: SYSTEM + "\n\nDatos actuales de la app:\n" + (context || "(sin datos)"),
+        messages: fixed
+      }, extra))
+    });
     let r;
     try {
-      r = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        signal: ctl.signal,
-        headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-        body: JSON.stringify({
-          model: process.env.AI_MODEL || "claude-haiku-5-5",
-          max_tokens: 1500,
-          system: SYSTEM + "\n\nDatos actuales de la app:\n" + (context || "(sin datos)"),
-          messages: fixed
-        })
-      });
+      // Sin razonamiento previo: responde directo y rápido (Netlify corta a los 10 segundos).
+      r = await call({ thinking: { type: "disabled" } });
+      if (r.status === 400) r = await call({ output_config: { effort: "low" } });
     } finally { clearTimeout(tm); }
     const d = await r.json().catch(() => ({}));
     if (!r.ok) return json(r.status, { error: "La IA respondió " + r.status + ((d.error && d.error.message) ? ": " + d.error.message : "") });
