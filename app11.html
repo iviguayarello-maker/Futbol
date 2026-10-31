@@ -200,15 +200,28 @@ const oddsCall=async(fid,mk)=>{
     if(r.status!==403||bk==="betano")throw new Error(msg);
   }
 };
+const HIST=["betano,betway,megapari","limitless-ex,fliff,betus","pokerstars.es,leovegas.it,sportwetten.de"];
+const histCall=async(fid,mk,utc)=>{
+  let last=null;
+  for(const bk of HIST){
+    await gate();
+    const r=await fetch("/.netlify/functions/op?p="+encodeURIComponent(`historical-odds?fixtureId=${fid}&bookmakers=${bk}`)+"&mk="+mk+"&t="+encodeURIComponent(new Date(utc).toISOString()));
+    LASTOP=Date.now()+3500;
+    if(!r.ok){last=await errTxt(r);if(r.status===403||r.status===404)continue;throw new Error(last)}
+    const j=await r.json();if(Object.keys(j.odds||{}).length)return j;
+  }
+  if(last)throw new Error(last);
+  return{odds:{}};
+};
 const PREF=[/^betano/i,/^betway/i,/^pokerstars/i,/^leovegas/i,/^sportwetten/i,/^megapari/i,/^betus/i,/^fliff/i,/^quigioco/i,/^limitless/i,/^betano/i,/^bet365/i,/^codere/i,/^betsson/i,/^bplay/i,/^betway/i,/^bwin/i,/^william/i,/^unibet/i,/^pinnacle/i,/^1xbet/i];
 const BKNAME=k=>String(k).replace(/\.(br|ar|com|es|it|co\.uk|ca|mx)$/i,"").replace(/^./,c=>c.toUpperCase());
 const med=a=>{const s=[...a].sort((x,y)=>x-y),n=s.length;return n%2?s[(n-1)/2]:(s[n/2-1]+s[n/2])/2};
 async function oddsFor(id,h,a,utc){
   const cached=LS.get("op_od3_"+id);if(cached){OD[id]=cached.o;ODSRC[id]=cached.src;return {ok:true,o:cached.o}}
-  if(new Date(utc).getTime()<Date.now())return{ok:false,msg:"El partido ya empezó y tu plan solo trae cuotas previas al partido."};
-  const t=new Date(utc).getTime(),d1=new Date(t).toISOString().slice(0,10),d2=new Date(t+864e5).toISOString().slice(0,10),ck="op_fx2_"+d1;
+  const started=new Date(utc).getTime()<Date.now();
+  const t=new Date(utc).getTime(),d1=new Date(t).toISOString().slice(0,10),d2=new Date(t+864e5).toISOString().slice(0,10),ck="op_fx2_"+d1+(started?"_s":"");
   let fx=LS.get(ck);
-  if(!fx){fx=await opget(`fixtures?sportId=10&from=${d1}&to=${d2}&hasOdds=true`);LS.set(ck,fx,3*36e5)}
+  if(!fx){fx=await opget(`fixtures?sportId=10&from=${d1}&to=${d2}`+(started?"":"&hasOdds=true"));LS.set(ck,fx,3*36e5)}
   const L=Array.isArray(fx)?fx:(fx.fixtures||fx.data||[]);
   let best=null,bs=0;
   L.forEach(f=>{if(Math.abs(fts(f)-t)>36e5*20)return;const s1=sim(h,fnm(f,1))+sim(a,fnm(f,2));if(s1>bs){bs=s1;best=f}});
@@ -217,9 +230,9 @@ async function oddsFor(id,h,a,utc){
   const R={};Object.keys(OPMAP).forEach(k=>{const r=resolve(k);if(r)R[k]=r});
   if(!R["1"])Object.assign(R,{"1":["101","101"],X:["101","102"],"2":["101","103"],O25:["1010","1010"],U25:["1010","1011"],B:["104","104"],N:["104","105"]});
   const mk=[...new Set(Object.values(R).map(r=>r[0]))].join(",");
-  const od=await oddsCall(best.fixtureId||best.id,mk);
+  const od=started?await histCall(best.fixtureId||best.id,mk,utc):await oddsCall(best.fixtureId||best.id,mk);
   const books=od.odds||{},keys=Object.keys(books);
-  if(!keys.length)return {ok:false,msg:"Ninguna casa publicó cuotas para este partido todavía."};
+  if(!keys.length)return {ok:false,msg:started?"No encontré cuotas de antes del inicio para este partido.":"Ninguna casa publicó cuotas para este partido todavía."};
   const o={},src={};
   Object.entries(R).forEach(([k,[m,x]])=>{
     const have=keys.filter(b=>books[b][m]&&books[b][m][x]);if(!have.length)return;
@@ -228,7 +241,8 @@ async function oddsFor(id,h,a,utc){
     else{o[k]=+med(have.map(b=>books[b][m][x])).toFixed(2);src[k]=have.length>1?`mediana de ${have.length} casas`:BKNAME(have[0])}
   });
   if(!Object.keys(o).length)return {ok:false,msg:"Las casas no ofrecen estos mercados para este partido."};
-  OD[id]=o;ODSRC[id]=src;LS.set("op_od3_"+id,{o,src},2*36e5);
+  if(started)Object.keys(src).forEach(k=>src[k]+=" · cierre");
+  OD[id]=o;ODSRC[id]=src;LS.set("op_od3_"+id,{o,src},(started?24:2)*36e5);
   return {ok:true,o};
 }
 const fillSlip=()=>{let n=0;S.slip.forEach(x=>{const o=OD[x.id];if(o&&o[x.mk]&&!x.odds){x.odds=o[x.mk];x.src=(ODSRC[x.id]||{})[x.mk]||"";n++}});if(n)save();return n};
@@ -461,10 +475,10 @@ async function oddsForNBA(id,h,a,utc){
 }
 async function oddsForNBA2(id,h,a,utc){
   const cached=LS.get("op_odb_"+id);if(cached){OD[id]=cached.o;ODSRC[id]=cached.src;setNBAL(h,a,cached.o);return{ok:true,o:cached.o}}
-  if(new Date(utc).getTime()<Date.now())return{ok:false,msg:"El partido ya empezó y tu plan solo trae cuotas previas al partido."};
-  const t=new Date(utc).getTime(),d1=new Date(t-864e5/2).toISOString().slice(0,10),d2=new Date(t+864e5).toISOString().slice(0,10),ck="op_fxb_"+d1;
+  const started=new Date(utc).getTime()<Date.now();
+  const t=new Date(utc).getTime(),d1=new Date(t-864e5/2).toISOString().slice(0,10),d2=new Date(t+864e5).toISOString().slice(0,10),ck="op_fxb_"+d1+(started?"_s":"");
   let fx=LS.get(ck);
-  if(!fx){fx=await opget(`fixtures?sportId=11&from=${d1}&to=${d2}&hasOdds=true`);LS.set(ck,fx,3*36e5)}
+  if(!fx){fx=await opget(`fixtures?sportId=11&from=${d1}&to=${d2}`+(started?"":"&hasOdds=true"));LS.set(ck,fx,3*36e5)}
   const L=Array.isArray(fx)?fx:(fx.fixtures||fx.data||[]);
   let best=null,bs=0;
   L.forEach(f=>{if(Math.abs(fts(f)-t)>36e5*14)return;const s1=sim(h,fnm(f,1))+sim(a,fnm(f,2));if(s1>bs){bs=s1;best=f}});
@@ -472,12 +486,13 @@ async function oddsForNBA2(id,h,a,utc){
   await catalogB();const R=nbaKeys();
   if(!Object.keys(R).length)return{ok:false,msg:"No pude identificar los mercados de NBA en OddsPapi."};
   const mk=[...new Set(Object.values(R).map(r=>r[0]))].join(",");
-  const od=await oddsCall(best.fixtureId||best.id,mk);
+  const od=started?await histCall(best.fixtureId||best.id,mk,utc):await oddsCall(best.fixtureId||best.id,mk);
   const books=od.odds||{};
-  if(!Object.keys(books).length)return{ok:false,msg:"Ninguna casa publicó cuotas para este partido todavía."};
+  if(!Object.keys(books).length)return{ok:false,msg:started?"No encontré cuotas de antes del inicio para este partido.":"Ninguna casa publicó cuotas para este partido todavía."};
   const {o,src}=pickPrices(books,R);
   if(!Object.keys(o).length)return{ok:false,msg:"Las casas no ofrecen estos mercados para este partido."};
-  OD[id]=o;ODSRC[id]=src;setNBAL(h,a,o);LS.set("op_odb_"+id,{o,src,h,a},2*36e5);
+  if(started)Object.keys(src).forEach(k=>src[k]+=" · cierre");
+  OD[id]=o;ODSRC[id]=src;setNBAL(h,a,o);LS.set("op_odb_"+id,{o,src,h,a},(started?24:2)*36e5);
   return{ok:true,o};
 }
 
