@@ -10,7 +10,7 @@ exports.handler = async (e) => {
     if (!/^(fixtures|markets|odds)(\?[A-Za-z0-9=&,_.:-]*)?$/.test(p)) return json(400, { error: "pedido no válido" });
     if (!process.env.ODDSPAPI_KEY) return json(500, { error: "Falta la variable ODDSPAPI_KEY en Netlify" });
 
-    const pp = p.replace(/&bookmakers=[^&]*/, "");
+    const pp = p;
     const url = "https://api.oddspapi.io/v4/" + pp + (pp.includes("?") ? "&" : "?") + "apiKey=" + encodeURIComponent(process.env.ODDSPAPI_KEY);
     const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 9000);
     let r;
