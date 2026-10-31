@@ -166,7 +166,7 @@ const fnm=(f,k)=>{const c=k===1?[f.participant1Name,f.homeTeamName,f.homeTeam&&f
 const fts=f=>new Date(f.startTime||f.trueStartTime||f.startAt||f.date||0).getTime();
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 let LASTOP=0;const gate=async()=>{const w=LASTOP+1300-Date.now();if(w>0)await sleep(w);LASTOP=Date.now()};
-const opget=async(q,tries=2)=>{await gate();const r=await fetch("/.netlify/functions/op?p="+encodeURIComponent(q));if(!r.ok){let m="";try{const j=await r.json();m=j.error||""}catch(e){}if(r.status===429&&tries>0){await sleep(6000);return opget(q,tries-1)}throw new Error(r.status+(m?": "+m:""))}return r.json()};
+const opget=async(q,tries=2)=>{await gate();const r=await fetch("/.netlify/functions/op?p="+encodeURIComponent(q));if(!r.ok){let m="";try{const j=await r.json();m=(j.error||"")+(j.detalle?" · "+String(j.detalle).replace(/<[^>]*>/g,"").slice(0,90):"")}catch(e){}if(r.status===429&&tries>0){await sleep(6000);return opget(q,tries-1)}throw new Error(r.status+(m?": "+m:""))}return r.json()};
 const price=(b,m,o)=>{try{const x=b.markets[m].outcomes[o].players["0"];return x&&x.active!==false&&x.price>1?x.price:null}catch(e){return null}};
 const LS={get:(k)=>{try{const x=JSON.parse(localStorage.getItem(k)||"null");return x&&x.e>Date.now()?x.v:null}catch(e){return null}},set:(k,v,ms)=>{try{localStorage.setItem(k,JSON.stringify({v,e:Date.now()+ms}))}catch(e){}}};
 let CAT=null;
@@ -440,6 +440,10 @@ function pickPrices(books,R){
   return{o,src};
 }
 async function oddsForNBA(id,h,a,utc){
+  if(LS.get("op_nba_block"))return{ok:false,msg:"OddsPapi no habilita cuotas de NBA en tu plan gratis. Cargá la cuota a mano."};
+  try{return await oddsForNBA2(id,h,a,utc)}catch(e){if(/^40[13]/.test(e.message)){LS.set("op_nba_block",1,12*36e5);return{ok:false,msg:"OddsPapi no habilita cuotas de NBA en tu plan gratis ("+e.message.slice(0,80)+"). Cargá la cuota a mano."}}throw e}
+}
+async function oddsForNBA2(id,h,a,utc){
   const cached=LS.get("op_odb_"+id);if(cached){OD[id]=cached.o;ODSRC[id]=cached.src;return{ok:true,o:cached.o}}
   const t=new Date(utc).getTime(),d1=new Date(t-864e5/2).toISOString().slice(0,10),d2=new Date(t+864e5).toISOString().slice(0,10),ck="op_fxb_"+d1;
   let fx=LS.get(ck);
@@ -451,7 +455,7 @@ async function oddsForNBA(id,h,a,utc){
   await catalogB();const R=nbaKeys();
   if(!Object.keys(R).length)return{ok:false,msg:"No pude identificar los mercados de NBA en OddsPapi."};
   const mk=[...new Set(Object.values(R).map(r=>r[0]))].join(",");
-  await gate();const od=await fetch("/.netlify/functions/op?p="+encodeURIComponent(`odds?fixtureId=${best.fixtureId||best.id}`)+"&mk="+mk).then(async r=>{if(!r.ok){let m="";try{m=(await r.json()).error||""}catch(e){}throw new Error(r.status+(m?": "+m:""))}return r.json()});
+  await gate();const od=await fetch("/.netlify/functions/op?p="+encodeURIComponent(`odds?fixtureId=${best.fixtureId||best.id}`)+"&mk="+mk).then(async r=>{if(!r.ok){let m="";try{const j=await r.json();m=(j.error||"")+(j.detalle?" · "+String(j.detalle).replace(/<[^>]*>/g,"").slice(0,90):"")}catch(e){}throw new Error(r.status+(m?": "+m:""))}return r.json()});
   const books=od.odds||{};
   if(!Object.keys(books).length)return{ok:false,msg:"Ninguna casa publicó cuotas para este partido todavía."};
   const {o,src}=pickPrices(books,R);
