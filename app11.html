@@ -93,6 +93,7 @@ input:focus,.field:focus,textarea:focus{border-color:var(--in)}
 .lh{display:flex;gap:10px;align-items:flex-start;justify-content:space-between}.lh b{display:block;font-size:14px}.lh span{font-size:12px;color:var(--mu)}
 .lrow{display:flex;align-items:center;gap:8px;margin-top:8px}.lrow .mu{flex:1;font-size:12px}
 .oin{width:96px;text-align:center}.oin input{padding:8px;text-align:center;font-weight:800}.oin small{display:block;font-size:10px;color:var(--mu);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sgp{border:1px solid var(--bd);border-left:3px solid var(--in);border-radius:14px;padding:4px 12px 10px;margin:10px 0}.sgph{padding:8px 0 0;font-size:13px}.sgp .leg:last-of-type{border-bottom:1px solid var(--bd)}
 .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center}.kpis span{display:block;font-size:11px;color:var(--mu);font-weight:600}.kpis b{font-size:17px}
 .chart{width:100%;height:120px;margin-top:14px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:0 8px}
@@ -400,11 +401,6 @@ function lim(){
   if(S.lw>0&&loss(7)>=S.lw)h+='<p class="bad"><b>Llegaste a tu límite semanal de pérdida. Pará hasta la semana próxima.</b></p>';
   return h;
 }
-function calc(){
-  const L=S.slip,p=L.reduce((a,x)=>a*x.p,1),od=L.reduce((a,x)=>a*(+x.odds||0),1),ok=L.length>0&&L.every(x=>+x.odds>1),ev=ok?p*od-1:null;
-  const mx=S.cap*S.pct/100,k=ok&&ev>0?ev/(od-1)/4:0,sug=S.cap?Math.min(S.cap*k,mx):0;
-  return{p,od,ok,ev,mx,sug};
-}
 const dots=r=>`<span class="dots">${(r||[]).slice(0,5).map(x=>`<span class="${x}">${x}</span>`).join("")}</span>`;
 
 function ctx(){
@@ -417,6 +413,7 @@ function ctx(){
       L.push(`- ${h} vs ${a} (${new Date(m.utcDate).toLocaleString("es-AR",{weekday:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}): local ${pc(P["1"])}, empate ${pc(P.X)}, visita ${pc(P["2"])}, +1.5 ${pc(P.O15)}, +2.5 ${pc(P.O25)}, ambos marcan ${pc(P.B)}; xG ${M.lh.toFixed(2)}-${M.la.toFixed(2)}; forma ${A.r.slice(0,5).join("")||"-"} / ${B.r.slice(0,5).join("")||"-"}; jugados ${A.n}/${B.n}`+(Object.keys(o).length?`; cuotas: ${Object.entries(o).slice(0,8).map(([k,v])=>k+"="+v).join(", ")}`:""))});
   }
   if(S.slip.length){const c=calc();L.push("Combinada del usuario:");S.slip.forEach(x=>L.push(`- ${x.l} (${x.d}): prob. modelo ${pc(x.p)}, cuota justa ${(1/x.p).toFixed(2)}, cuota ${x.odds||"sin cargar"}${x.src?" ("+x.src+")":""}`));
+    groups().filter(g=>g.length>1).forEach(g=>L.push(`Combinada del mismo partido (${g[0].d}): ${g.map(z=>z.l).join(" + ")}; prob. conjunta del modelo ${(jointGroup(g)*100).toFixed(1)}% (la cuota de este combo la fija la casa${(S.gq||{})[g[0].id]?": "+S.gq[g[0].id]:", sin cargar"})`));
     L.push(`Total: prob. de acertar todas ${(c.p*100).toFixed(1)}%`+(c.ok?`, cuota total ${c.od.toFixed(2)}, valor esperado por $1 ${c.ev.toFixed(2)}`:", faltan cuotas"));}
   else L.push("Combinada del usuario: vacía.");
   const R=S.bets.filter(b=>b.r==="G"||b.r==="P"),pf=R.reduce((a,b)=>a+(b.r==="G"?b.s*(b.o-1):-b.s),0),st=R.reduce((a,b)=>a+b.s,0);
@@ -496,6 +493,62 @@ async function oddsForNBA2(id,h,a,utc){
   return{ok:true,o};
 }
 
+// ---------- Combinadas del mismo partido: probabilidad conjunta ----------
+const nbaPred=k=>{let m;
+  if(k==="H")return(h,a)=>h>a;
+  if(k==="A")return(h,a)=>a>h;
+  if(m=k.match(/^HM([\d.]+)$/)){const L=+m[1];return(h,a)=>h-a>L}
+  if(m=k.match(/^AP([\d.]+)$/)){const L=+m[1];return(h,a)=>h-a<L}
+  if(m=k.match(/^AM([\d.]+)$/)){const L=+m[1];return(h,a)=>a-h>L}
+  if(m=k.match(/^HP([\d.]+)$/)){const L=+m[1];return(h,a)=>a-h<L}
+  if(m=k.match(/^TO([\d.]+)$/)){const L=+m[1];return(h,a)=>h+a>L}
+  if(m=k.match(/^TU([\d.]+)$/)){const L=+m[1];return(h,a)=>h+a<L}
+  if(m=k.match(/^HO([\d.]+)$/)){const L=+m[1];return(h,a)=>h>L}
+  if(m=k.match(/^AO([\d.]+)$/)){const L=+m[1];return(h,a)=>a>L}
+  if(k==="H10")return(h,a)=>h-a>9.5;
+  if(k==="A10")return(h,a)=>a-h>9.5;
+  if(k==="CL5")return(h,a)=>Math.abs(h-a)<5.5;
+  return null;
+};
+const JC={};
+function jointGroup(L){
+  if(!L.length)return 1;
+  if(L.length===1)return L[0].p;
+  const x0=L[0];
+  if(!(x0.lh>0&&x0.la>0))return L.reduce((a,x)=>a*x.p,1);
+  const key=x0.sp+"|"+x0.lh.toFixed(3)+"|"+x0.la.toFixed(3)+"|"+L.map(x=>x.mk).sort().join(",");
+  if(JC[key]!==undefined)return JC[key];
+  let res;
+  if(x0.sp==="nba"){
+    // Margen y total son normales independientes (desvíos 12,5 y 17, como el modelo); cada equipo = (total ± margen) / 2.
+    const sM=12.5,sT=17,mu=x0.lh-x0.la,tt=x0.lh+x0.la,preds=[],ind=[];
+    L.forEach(x=>{const f=nbaPred(x.mk);if(f)preds.push(f);else ind.push(x.p)});
+    const cells=(m,sd,st)=>{const out=[];for(let v=m-4.5*sd;v<m+4.5*sd;v+=st)out.push([v+st/2,Phi((v+st-m)/sd)-Phi((v-m)/sd)]);return out};
+    const DM=cells(mu,sM,.25),TM=cells(tt,sT,.25);let ok=0,tot=0;
+    for(const [d,wd] of DM)for(const [t,wt] of TM){const w=wd*wt;tot+=w;const h=(t+d)/2,a=(t-d)/2;if(preds.every(f=>f(h,a)))ok+=w}
+    res=(tot?ok/tot:0)*ind.reduce((a,b)=>a*b,1);
+  }else{
+    // Fútbol: matriz de Poisson de resultados exactos (90') y otra para el primer tiempo.
+    const mat=(x,y)=>{const m=[];let t=0;for(let i=0;i<=10;i++){m[i]=[];for(let j=0;j<=10;j++){m[i][j]=pois(x,i)*pois(y,j);t+=m[i][j]}}return{m,t}};
+    const part=(L2,F)=>{if(!L2.length)return 1;const fs=L2.map(x=>G.find(y=>y.k===x.mk).f);let s=0;for(let i=0;i<=10;i++)for(let j=0;j<=10;j++)if(fs.every(f=>f(i,j)))s+=F.m[i][j];return s/F.t};
+    const ft=[],ht=[],ind=[];
+    L.forEach(x=>{const g=G.find(y=>y.k===x.mk);if(!g||/^DNB/.test(x.mk))ind.push(x.p);else(g.ht?ht:ft).push(x)});
+    res=part(ft,mat(x0.lh,x0.la))*part(ht,mat(x0.lh*.45,x0.la*.45))*ind.reduce((a,b)=>a*b,1);
+  }
+  return JC[key]=res;
+}
+function groups(){const g=new Map();S.slip.forEach(x=>{if(!g.has(x.id))g.set(x.id,[]);g.get(x.id).push(x)});return[...g.values()]}
+function calc(){
+  const GR=groups();let p=1,od=1,ok=S.slip.length>0,est=false;
+  GR.forEach(L=>{
+    p*=jointGroup(L);
+    if(L.length>1){const q=+((S.gq||{})[L[0].id]);if(q>1)od*=q;else if(L.every(x=>+x.odds>1)){od*=L.reduce((a,x)=>a*x.odds,1);est=true}else ok=false}
+    else{if(+L[0].odds>1)od*=+L[0].odds;else ok=false}
+  });
+  const ev=ok?p*od-1:null,mx=S.cap*S.pct/100,k=ok&&ev>0?ev/(od-1)/4:0,sug=S.cap?Math.min(S.cap*k,mx):0;
+  return{p,od,ok,ev,mx,sug,est};
+}
+
 // =================== VALORA · Interfaz ===================
 let SEARCH="",TOOL=null,SPORT="fut";
 if(!S.flg)S.flg="PL";
@@ -508,11 +561,15 @@ const edge=(p,o)=>p*o-1;
 
 // ---------- utilidades de cupón ----------
 function addLeg(m,k,silent){
-  const h=m.homeTeam.name,aw=m.awayTeam.name,M=model(h,aw),cur=S.slip.findIndex(s=>s.id===m.id);
-  const it={id:m.id,mk:k,sp:D.sport,h,a:aw,u:m.utcDate,d:h+" vs "+aw,l:LBL(k,h,aw),p:M.P[k],odds:(OD[m.id]&&OD[m.id][k])||"",src:(OD[m.id]&&OD[m.id][k])?((ODSRC[m.id]||{})[k]||""):""};
-  if(cur>=0&&S.slip[cur].mk===k){S.slip.splice(cur,1);save();if(!silent)toast("Quitada del cupón");return false}
-  if(cur>=0)S.slip[cur]=it;else S.slip.push(it);
-  save();if(!silent){toast("✓ "+it.l);if(navigator.vibrate)navigator.vibrate(10)}
+  const h=m.homeTeam.name,aw=m.awayTeam.name,M=model(h,aw),idx=S.slip.findIndex(s=>s.id===m.id&&s.mk===k);
+  if(idx>=0){S.slip.splice(idx,1);save();if(!silent)toast("Quitada del cupón");return false}
+  const it={id:m.id,mk:k,sp:D.sport,h,a:aw,u:m.utcDate,d:h+" vs "+aw,l:LBL(k,h,aw),p:M.P[k],lh:M.lh,la:M.la,odds:(OD[m.id]&&OD[m.id][k])||"",src:(OD[m.id]&&OD[m.id][k])?((ODSRC[m.id]||{})[k]||""):""};
+  const same=S.slip.filter(s=>s.id===m.id);
+  if(same.length&&jointGroup([...same,it])<.002){
+    S.slip=S.slip.filter(s=>s.id!==m.id);S.slip.push(it);if(S.gq)delete S.gq[m.id];save();
+    if(!silent)toast("Reemplazada: no se puede combinar con la anterior");return true}
+  S.slip.push(it);if(same.length&&S.gq)delete S.gq[m.id];save();
+  if(!silent){toast(same.length?"🔗 Combinada en el mismo partido":"✓ "+it.l);if(navigator.vibrate)navigator.vibrate(10)}
   return true;
 }
 function slipText(){
@@ -535,10 +592,10 @@ function vMatches(){
    (list.length?list.map(({m,i})=>card(m,i)).join(""):`<div class="empty"><b>🔎</b>Ningún partido coincide.</div>`);
 }
 function card(m,i){
-  const h=m.homeTeam.name,a=m.awayTeam.name,M=model(h,a),P=M.P,A=D.T[h]||{r:[],n:0},B=D.T[a]||{r:[],n:0},on=S.slip.find(x=>x.id===m.id),o=OD[m.id]||{};
+  const h=m.homeTeam.name,a=m.awayTeam.name,M=model(h,a),P=M.P,A=D.T[h]||{r:[],n:0},B=D.T[a]||{r:[],n:0},ons=S.slip.filter(x=>x.id===m.id),o=OD[m.id]||{};
   const nba=isNBA(),keys=nba?[["H","Local"],["A","Visita"]]:[["1","Local"],["X","Empate"],["2","Visita"]];
-  const q=(k,t)=>{const e=o[k]?edge(P[k],o[k]):null;return`<button class="q${on&&on.mk===k?" in":""}" data-a="pick" data-i="${i}" data-k="${k}"><span>${t}</span><b>${pc(P[k])}</b><small>${o[k]?`${fx2(o[k])}${e>0?` <em class="up">+${Math.round(e*100)}%</em>`:""}`:`justa ${fx2(1/P[k])}`}</small></button>`};
-  const extra=on&&!keys.some(k=>k[0]===on.mk)?`<div class="chip-on">✓ ${esc(on.l)}</div>`:"";
+  const q=(k,t)=>{const e=o[k]?edge(P[k],o[k]):null;return`<button class="q${ons.some(x=>x.mk===k)?" in":""}" data-a="pick" data-i="${i}" data-k="${k}"><span>${t}</span><b>${pc(P[k])}</b><small>${o[k]?`${fx2(o[k])}${e>0?` <em class="up">+${Math.round(e*100)}%</em>`:""}`:`justa ${fx2(1/P[k])}`}</small></button>`};
+  const oth=ons.filter(x=>!keys.some(k=>k[0]===x.mk)),extra=oth.length||ons.length>1?`<div class="chip-on">${ons.length>1?"🔗 ":"✓ "}${esc(oth.map(x=>x.l).join(" + ")||ons.length+" selecciones")}${ons.length>1?` · conjunta ${pc(jointGroup(ons))}`:""}</div>`:"";
   return`<article class="card mc" data-a="open" data-i="${i}">
   <div class="mtop"><span>${nba?"🏀 NBA":esc(LGN[lg]||"")}</span><span>${new Date(m.utcDate).toLocaleString("es-AR",{weekday:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</span></div>
   <div class="team">${crest(m.homeTeam)}<b>${esc(sn(m.homeTeam))}</b>${dots(A.r)}</div>
@@ -549,7 +606,7 @@ function card(m,i){
 function vSheet(){
   if(SHEET===null||!D||!D.n[SHEET])return"";
   const i=SHEET,m=D.n[i],h=m.homeTeam.name,a=m.awayTeam.name,M=model(h,a),P=M.P,A=D.T[h]||{n:0},B=D.T[a]||{n:0},low=Math.min(A.n,B.n)<5,nba=isNBA();
-  const cur=MK[m.id]||(nba?"H":"1"),on=S.slip.find(x=>x.id===m.id),o=OD[m.id]||{},c=o[cur],vp=c?edge(P[cur],c):null,inn=on&&on.mk===cur,ML=MLIST(h,a),MG=[...new Set(ML.map(x=>x.g))];
+  const cur=MK[m.id]||(nba?"H":"1"),ons=S.slip.filter(x=>x.id===m.id),o=OD[m.id]||{},c=o[cur],vp=c?edge(P[cur],c):null,inn=ons.some(x=>x.mk===cur),ML=MLIST(h,a),MG=[...new Set(ML.map(x=>x.g))];
   const sel=`<select class="field" data-m="${m.id}">${MG.map(g=>`<optgroup label="${esc(g)}">${ML.filter(x=>x.g===g).map(x=>`<option value="${x.k}"${x.k===cur?" selected":""}>${esc(x.l(sn(m.homeTeam),sn(m.awayTeam)))} · ${pc(P[x.k])}${o[x.k]?" · "+fx2(o[x.k]):""}</option>`).join("")}</optgroup>`).join("")}</select>`;
   const best=ML.filter(x=>o[x.k]).map(x=>({x,e:edge(P[x.k],o[x.k])})).filter(z=>z.e>0).sort((a,b)=>b.e-a.e).slice(0,3);
   return`<div class="ov" data-a="close"></div><div class="sheet" role="dialog"><div class="grab"></div>
@@ -560,7 +617,8 @@ function vSheet(){
   <label class="lbl">Mercado · ${ML.length} disponibles</label>${sel}
   <div class="stats3"><div><span>Probabilidad</span><b>${pc(P[cur])}</b></div><div><span>Cuota justa</span><b>${fx2(1/P[cur])}</b></div><div><span>${c?esc((ODSRC[m.id]||{})[cur]||"Cuota"):"Entrar desde"}</span><b class="${c?(vp>0?"ok":"bad"):""}">${c?fx2(c):fx2(1.05/P[cur])}</b></div></div>
   ${c?`<div class="pillrow"><span class="tag ${vp>0?"up":"dn"}">${vp>0?"+":""}${(vp*100).toFixed(1)}% de valor</span></div>`:""}
-  <button class="btn${inn?" ghost":""}" data-a="pick" data-i="${i}" data-k="${cur}">${inn?"Quitar del cupón":on?"Reemplazar selección de este partido":"Agregar al cupón"}</button>
+  ${ons.length&&!inn?(()=>{const jp=jointGroup([...ons,{sp:D.sport,mk:cur,p:P[cur],lh:M.lh,la:M.la}]);return jp<.002?`<p class="small wn center">No se puede combinar con ${esc(ons.map(x=>x.l).join(" + "))}: reemplazaría tu selección.</p>`:`<p class="small center mu">🔗 Combinado con ${esc(ons.map(x=>x.l).join(" + "))}: prob. conjunta <b>${pctf(jp)}</b> · justa ${fx2(1/jp)}</p>`})():""}
+  <button class="btn${inn?" ghost":""}" data-a="pick" data-i="${i}" data-k="${cur}">${inn?"Quitar del cupón":ons.length?"Combinar en el mismo partido":"Agregar al cupón"}</button>
   <div class="two"><button class="btn ghost" data-a="odds" data-i="${i}">💸 Traer cuotas</button><button class="btn ai" data-a="aimatch" data-i="${i}">✨ Analizar</button></div>
   ${ODmsg[m.id]?`<p class="mu small">${esc(ODmsg[m.id])}</p>`:""}
   ${best.length?`<div class="sub"><b>Mejor valor en este partido</b>${best.map(z=>`<button class="vrow" data-a="setmk" data-m="${m.id}" data-k="${z.x.k}"><span>${esc(z.x.l(sn(m.homeTeam),sn(m.awayTeam)))}</span><em class="up">+${(z.e*100).toFixed(0)}%</em></button>`).join("")}</div>`:""}
@@ -572,20 +630,26 @@ function vSlip(){
   if(!S.slip.length)return`<div class="empty big"><b>🎟️</b><h3>Tu cupón está vacío</h3><p>Sumá selecciones desde Partidos o dejá que el <b>Armador</b> te proponga una combinada.</p><div class="two"><button class="btn" data-t="m">Ver partidos</button><button class="btn ghost" data-a="tool" data-tool="gen">Armador automático</button></div></div>`;
   const c=calc(),n=S.slip.length,Lm=lim(),falt=S.slip.filter(x=>!x.odds).length,stk=+S.stake||0,ret=c.ok?stk*c.od:0;
   const kel=c.ok&&c.ev>0&&S.cap?Math.min(S.cap*c.ev/(c.od-1)/4,c.mx):0;
-  const legs=S.slip.map((x,i)=>{const e=x.odds?edge(x.p,+x.odds):null;return`<div class="leg">
+  const legRow=x=>{const i=S.slip.indexOf(x),e=x.odds?edge(x.p,+x.odds):null;return`<div class="leg">
     <div class="lh"><div><b>${esc(x.l)}</b><span>${x.sp==="nba"?"🏀 ":""}${esc(x.d)}</span></div><button class="ic-btn" data-a="rm" data-i="${i}" aria-label="Quitar">✕</button></div>
-    <div class="lrow"><span class="mu">${pc(x.p)} · justa ${fx2(1/x.p)}</span><div class="oin"><input type="number" inputmode="decimal" step="0.01" min="1.01" value="${x.odds}" data-o="${i}" placeholder="Cuota"><small>${x.src?esc(x.src):""}</small></div>${e!==null?`<em class="tag ${e>0?"up":"dn"}">${e>0?"+":""}${Math.round(e*100)}%</em>`:""}</div></div>`}).join("");
+    <div class="lrow"><span class="mu">${pc(x.p)} · justa ${fx2(1/x.p)}</span><div class="oin"><input type="number" inputmode="decimal" step="0.01" min="1.01" value="${x.odds}" data-o="${i}" placeholder="Cuota"><small>${x.src?esc(x.src):""}</small></div>${e!==null?`<em class="tag ${e>0?"up":"dn"}">${e>0?"+":""}${Math.round(e*100)}%</em>`:""}</div></div>`};
+  const legs=groups().map(L=>{
+    if(L.length===1)return legRow(L[0]);
+    const jp=jointGroup(L),ind=L.reduce((a,x)=>a*x.p,1),prod=L.every(x=>+x.odds>1)?L.reduce((a,x)=>a*x.odds,1):null,q=(S.gq||{})[L[0].id]||"",qe=+q>1?edge(jp,+q):null;
+    return`<div class="sgp"><div class="sgph">🔗 <b>Mismo partido · ${L.length} selecciones</b></div>${L.map(legRow).join("")}
+    <div class="lrow"><span class="mu">Conjunta <b>${pctf(jp)}</b> · justa ${fx2(1/jp)}${Math.abs(jp-ind)>.004?`<br>Si fueran independientes: ${pctf(ind)}`:""}</span><div class="oin"><input type="number" inputmode="decimal" step="0.01" min="1.01" value="${q}" data-g="${esc(L[0].id)}" placeholder="${prod?fx2(prod):"Cuota"}"><small>cuota del combo</small></div>${qe!==null?`<em class="tag ${qe>0?"up":"dn"}">${qe>0?"+":""}${Math.round(qe*100)}%</em>`:""}</div>
+    <p class="small mu">La casa fija una cuota propia para combinar el mismo partido ("Crear apuesta" en Betano): no es la multiplicación. Cargá esa cuota acá.${prod&&!q?` Mientras tanto uso ${fx2(prod)} como estimación.`:""}</p></div>`}).join("");
   const weak=c.ok?S.slip.map(x=>({x,e:edge(x.p,+x.odds)})).sort((a,b)=>a.e-b.e)[0]:null;
   return`<div class="card sum">
-    <div class="sumtop"><div><span>Cuota total</span><b>${c.ok?fx2(c.od):"—"}</b></div><div><span>Prob. de acierto</span><b>${pctf(c.p)}</b></div><div><span>Valor esperado</span><b class="${c.ev>0?"ok":c.ok?"bad":""}">${c.ok?(c.ev>0?"+":"")+pctf(c.ev,0):"—"}</b></div></div>
+    <div class="sumtop"><div><span>Cuota total</span><b>${c.ok?fx2(c.od)+(c.est?"*":""):"—"}</b></div><div><span>Prob. de acierto</span><b>${pctf(c.p)}</b></div><div><span>Valor esperado</span><b class="${c.ev>0?"ok":c.ok?"bad":""}">${c.ok?(c.ev>0?"+":"")+pctf(c.ev,0):"—"}</b></div></div>
     <div class="stake"><label class="lbl">Monto</label><div class="stkrow"><input id="stk" type="number" inputmode="decimal" value="${S.stake}" placeholder="$"><div class="sret"><span>Cobrás</span><b>${ret?mon(ret):"—"}</b></div></div>
     <div class="qchips">${S.cap?`<button data-a="stk" data-v="${(S.cap*.01).toFixed(0)}">1%</button><button data-a="stk" data-v="${(S.cap*S.pct/100).toFixed(0)}">${S.pct}%</button>${kel?`<button data-a="stk" data-v="${kel.toFixed(0)}">Kelly ¼</button>`:""}`:`<button data-t="d">Cargá tu banca para montos sugeridos</button>`}</div></div>
     ${weak&&weak.e<0&&n>1?`<p class="small wn">⚠ La selección que más resta: <b>${esc(weak.x.l)}</b> (${Math.round(weak.e*100)}%).</p>`:""}
     ${falt?`<button class="btn ghost" data-a="slipodds">💸 Traer ${falt>1?falt+" cuotas":"la cuota"}</button>`:""}${SLmsg?`<p class="mu small">${SLmsg}</p>`:""}
     <div class="two"><button class="btn ai" data-a="aislip">✨ Analizar</button><button class="btn ghost" data-a="share">↗ Compartir</button></div>
     ${Lm}<button class="btn" data-a="reg" ${Lm?"disabled":""}>Registrar apuesta</button></div>
-  <div class="sect"><h4>${n} selecci${n>1?"ones":"ón"}</h4><button class="link" data-a="clearslip">Vaciar</button></div>
-  <div class="card legs">${legs}</div>
+  <div class="sect"><h4>${n} selecci${n>1?"ones":"ón"}${groups().length<n?` · ${groups().length} partidos`:""}</h4><button class="link" data-a="clearslip">Vaciar</button></div>
+  <div class="card legs">${legs}</div>${c.est?`<p class="small mu">* Cuota total estimada: falta la cuota real de algún combo del mismo partido.</p>`:""}
   <button class="btn ghost" data-a="tool" data-tool="sys">Convertir en sistema (ej. 2 de 3)</button>`;
 }
 
@@ -725,7 +789,9 @@ function headerRefresh(){
   lw.querySelectorAll(".pill").forEach(b=>b.classList.toggle("on",b.dataset.l===lg));
 }
 const isNBAlg=()=>lg==="NBA";
-function draw(){
+let DRAWN=0;
+function softSlip(){const tmp=document.createElement("div");tmp.innerHTML=vSlip();["sumtop","sret"].forEach(c=>{const a=document.querySelector("."+c),b=tmp.querySelector("."+c);if(a&&b)a.innerHTML=b.innerHTML})}
+function draw(){DRAWN++;
   const ae=document.activeElement,fid=ae&&ae.id,pos=ae&&ae.selectionStart;
   document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.t===tab));
   headerRefresh();
@@ -767,10 +833,10 @@ document.addEventListener("click",e=>{
   if(a==="aimatch"){const m=D.n[i];ask(`Analizá ${m.homeTeam.name} vs ${m.awayTeam.name} buscando valor: mercados con mejor relación probabilidad/cuota, desde qué cuota entrar y riesgos.`);return}
   if(a==="stk"){S.stake=t.dataset.v;save();draw();return}
   if(a==="share"){const txt=slipText();if(navigator.share)navigator.share({text:txt}).catch(()=>{});else if(navigator.clipboard)navigator.clipboard.writeText(txt).then(()=>toast("Copiado al portapapeles"));return}
-  if(a==="clearslip"){if(confirm("¿Vaciar el cupón?")){S.slip=[];SLmsg="";save();draw()}return}
-  if(a==="rm"){S.slip.splice(i,1);save();draw();return}
+  if(a==="clearslip"){if(confirm("¿Vaciar el cupón?")){S.slip=[];S.gq={};SLmsg="";save();draw()}return}
+  if(a==="rm"){const id=S.slip[i].id;S.slip.splice(i,1);if(S.gq&&S.slip.filter(x=>x.id===id).length<2)delete S.gq[id];save();draw();return}
   if(a==="tool"){TOOL=t.dataset.tool||null;tab="t";SIMOUT="";draw();scrollTo({top:0});return}
-  if(a==="genadd"){let n=0;GENPICK.forEach(z=>{const ex=S.slip.find(x=>x.id===z.m.id);if(!(ex&&ex.mk===z.k)){addLeg(z.m,z.k,1);n++}});toast(n?`Cargadas ${n} selecciones`:"Ya estaban en el cupón");tab="c";draw();scrollTo({top:0});return}
+  if(a==="genadd"){let n=0;GENPICK.forEach(z=>{if(!S.slip.some(x=>x.id===z.m.id)){addLeg(z.m,z.k,1);n++}});toast(n?`Cargadas ${n} selecciones`:"Ya estaban en el cupón");tab="c";draw();scrollTo({top:0});return}
   if(a==="simrun"){SIMOUT='<p class="mu small center">Simulando...</p>';$("#tout").innerHTML=SIMOUT;setTimeout(()=>{runSim();$("#tout").innerHTML=SIMOUT},30);return}
   if(a==="reg"){
     const c=calc(),s=+S.stake;
@@ -788,10 +854,11 @@ document.addEventListener("input",e=>{
   if(t.closest("#tool")&&TOOL&&TOOL!=="sim"){$("#tout").innerHTML=TF[TOOL].calc();return}
   if(t.id==="stk"){S.stake=t.value;save();const c=calc(),r=document.querySelector(".sret b");if(r)r.textContent=c.ok&&+t.value?mon(+t.value*c.od):"—";return}
   if(t.dataset.o!==undefined){const x=S.slip[+t.dataset.o];x.odds=t.value;x.src=t.value?"tu carga":"";save();return}
+  if(t.dataset.g!==undefined){S.gq=S.gq||{};if(t.value)S.gq[t.dataset.g]=t.value;else delete S.gq[t.dataset.g];save();return}
 });
 document.addEventListener("change",e=>{
   const t=e.target;
-  if(t.dataset.o!==undefined){draw();return}
+  if(t.dataset.o!==undefined||t.dataset.g!==undefined){const d0=DRAWN;setTimeout(()=>{if(DRAWN!==d0)return;const ae=document.activeElement;if(ae&&ae.matches&&ae.matches(".oin input,#stk"))softSlip();else draw()},180);return}
   if(t.closest&&t.closest("#tool")&&TOOL){if(TOOL==="sim")return;$("#tout").innerHTML=TF[TOOL].calc();return}
   if(t.dataset.m!==undefined){MK[t.dataset.m]=t.value;draw();return}
 });
