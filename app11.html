@@ -189,7 +189,18 @@ function resolve(k){
   return o?[String(m.marketId),String(o.outcomeId)]:null;
 }
 const ODSRC={};
-const PREF=[/^betano/i,/^bet365/i,/^codere/i,/^betsson/i,/^bplay/i,/^betway/i,/^bwin/i,/^william/i,/^unibet/i,/^pinnacle/i,/^1xbet/i];
+const BKS="betano,betway,pokerstars.es,leovegas.it,sportwetten.de,megapari,betus,fliff,quigioco.it,limitless-ex";
+const errTxt=async r=>{let m="";try{const j=await r.json();m=(j.error||"")+(j.detalle?" · "+String(j.detalle).replace(/<[^>]*>/g,"").slice(0,90):"")}catch(e){}return r.status+(m?": "+m:"")};
+const oddsCall=async(fid,mk)=>{
+  for(const bk of [BKS,"betano"]){
+    await gate();
+    const r=await fetch("/.netlify/functions/op?p="+encodeURIComponent(`odds?fixtureId=${fid}&bookmakers=${bk}`)+"&mk="+mk);
+    if(r.ok)return r.json();
+    const msg=await errTxt(r);
+    if(r.status!==403||bk==="betano")throw new Error(msg);
+  }
+};
+const PREF=[/^betano/i,/^betway/i,/^pokerstars/i,/^leovegas/i,/^sportwetten/i,/^megapari/i,/^betus/i,/^fliff/i,/^quigioco/i,/^limitless/i,/^betano/i,/^bet365/i,/^codere/i,/^betsson/i,/^bplay/i,/^betway/i,/^bwin/i,/^william/i,/^unibet/i,/^pinnacle/i,/^1xbet/i];
 const BKNAME=k=>String(k).replace(/\.(br|ar|com|es|it|co\.uk|ca|mx)$/i,"").replace(/^./,c=>c.toUpperCase());
 const med=a=>{const s=[...a].sort((x,y)=>x-y),n=s.length;return n%2?s[(n-1)/2]:(s[n/2-1]+s[n/2])/2};
 async function oddsFor(id,h,a,utc){
@@ -205,7 +216,7 @@ async function oddsFor(id,h,a,utc){
   const R={};Object.keys(OPMAP).forEach(k=>{const r=resolve(k);if(r)R[k]=r});
   if(!R["1"])Object.assign(R,{"1":["101","101"],X:["101","102"],"2":["101","103"],O25:["1010","1010"],U25:["1010","1011"],B:["104","104"],N:["104","105"]});
   const mk=[...new Set(Object.values(R).map(r=>r[0]))].join(",");
-  await gate();const od=await fetch("/.netlify/functions/op?p="+encodeURIComponent(`odds?fixtureId=${best.fixtureId||best.id}`)+"&mk="+mk).then(async r=>{if(!r.ok){let m="";try{m=(await r.json()).error||""}catch(e){}throw new Error(r.status+(m?": "+m:""))}return r.json()});
+  const od=await oddsCall(best.fixtureId||best.id,mk);
   const books=od.odds||{},keys=Object.keys(books);
   if(!keys.length)return {ok:false,msg:"Ninguna casa publicó cuotas para este partido todavía."};
   const o={},src={};
@@ -223,7 +234,7 @@ const fillSlip=()=>{let n=0;S.slip.forEach(x=>{const o=OD[x.id];if(o&&o[x.mk]&&!
 async function fetchOdds(i){
   const m=D.n[i];ODmsg[m.id]="Buscando...";draw();
   try{const r=await (isNBA()?oddsForNBA:oddsFor)(m.id,m.homeTeam.name,m.awayTeam.name,m.utcDate);
-    ODmsg[m.id]=r.ok?"Cuotas vía OddsPapi (Betano si está; si no, otra casa). Confirmalas antes de apostar.":r.msg+" Usá la cuota justa del modelo como referencia.";fillSlip();
+    ODmsg[m.id]=r.ok?"Cuotas vía OddsPapi (casas de tu plan gratis). Confirmá la cuota de tu casa antes de apostar.":r.msg+" Usá la cuota justa del modelo como referencia.";fillSlip();
   }catch(e){ODmsg[m.id]="No se pudo traer la cuota ("+esc(e.message)+")."}
   draw();
 }
@@ -302,7 +313,8 @@ const LBL=(k,h,a)=>{const x=MLIST(h,a).find(y=>y.k===k);return x?x.l(h,a):k};
 const erf=x=>{const t=1/(1+.3275911*Math.abs(x)),y=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-.284496736)*t+.254829592)*t*Math.exp(-x*x);return x>=0?y:-y};
 const Phi=z=>.5*(1+erf(z/Math.SQRT2));
 const f1=x=>String(x).replace(".",",");
-const NBAM={};
+const NBAM={},NBAL={};
+const setNBAL=(h,a,o)=>{const L=Object.keys(o||{}).filter(k=>/^TO\d/.test(k)).map(k=>+k.slice(2));if(L.length){NBAL[h+"|"+a]=L;delete NBAM[h+"|"+a]}};
 function modelNBA(h,a){
   const key=h+"|"+a;if(NBAM[key]&&NBAM[key].D===D)return NBAM[key];
   const A=D.T[h]||{gf:0,ga:0,n:0},B=D.T[a]||{gf:0,ga:0,n:0},avg=(D.hg+D.ag)/2,k=4;
@@ -322,6 +334,9 @@ function modelNBA(h,a){
   [-15,-10,-5,0,5,10,15].forEach(d=>{const L=base+d;
     put("Total de puntos","TO"+L,()=>`Más de ${f1(L)} puntos`,1-Phi((L-tot)/sT));
     put("Total de puntos","TU"+L,()=>`Menos de ${f1(L)} puntos`,Phi((L-tot)/sT));});
+  (NBAL[h+"|"+a]||[]).forEach(L=>{if(P["TO"+L]!==undefined)return;
+    put("Total de puntos","TO"+L,()=>`Más de ${f1(L)} puntos (línea de la casa)`,1-Phi((L-tot)/sT));
+    put("Total de puntos","TU"+L,()=>`Menos de ${f1(L)} puntos (línea de la casa)`,Phi((L-tot)/sT));});
   const bh=Math.round(lh)+.5,ba=Math.round(la)+.5,sTm=11;
   [-5,0,5].forEach(d=>{
     put("Puntos de equipo","HO"+(bh+d),(x)=>`${x}: más de ${f1(bh+d)} puntos`,1-Phi((bh+d-lh)/sTm));
@@ -345,7 +360,7 @@ function model(h,a){
   return{lh,la,P};
 }
 async function load(){
-  try{Object.keys(localStorage).filter(k=>/^op_od(3|b)_/.test(k)).forEach(k=>{const v=LS.get(k);if(v&&v.o){const id=k.replace(/^op_od(3|b)_/,"");OD[id]=v.o;ODSRC[id]=v.src||{}}})}catch(e){}
+  try{Object.keys(localStorage).filter(k=>/^op_od(3|b)_/.test(k)).forEach(k=>{const v=LS.get(k);if(v&&v.o){const id=k.replace(/^op_od(3|b)_/,"");OD[id]=v.o;ODSRC[id]=v.src||{};if(v.h)setNBAL(v.h,v.a,v.o)}})}catch(e){}
   D=null;err="";draw();
   try{
     const [f,n]=await Promise.all([get(`competitions/${lg}/matches?status=FINISHED`),get(`competitions/${lg}/matches?status=SCHEDULED,TIMED`)]);
@@ -440,11 +455,11 @@ function pickPrices(books,R){
   return{o,src};
 }
 async function oddsForNBA(id,h,a,utc){
-  if(LS.get("op_nba_block"))return{ok:false,msg:"OddsPapi no habilita cuotas de NBA en tu plan gratis. Cargá la cuota a mano."};
-  try{return await oddsForNBA2(id,h,a,utc)}catch(e){if(/^40[13]/.test(e.message)){LS.set("op_nba_block",1,12*36e5);return{ok:false,msg:"OddsPapi no habilita cuotas de NBA en tu plan gratis ("+e.message.slice(0,80)+"). Cargá la cuota a mano."}}throw e}
+  if(LS.get("op_nba_block2"))return{ok:false,msg:"OddsPapi no habilita cuotas de NBA en tu plan gratis. Cargá la cuota a mano."};
+  try{return await oddsForNBA2(id,h,a,utc)}catch(e){if(/^40[13]/.test(e.message)){LS.set("op_nba_block2",1,12*36e5);return{ok:false,msg:"OddsPapi no habilita cuotas de NBA en tu plan gratis ("+e.message.slice(0,80)+"). Cargá la cuota a mano."}}throw e}
 }
 async function oddsForNBA2(id,h,a,utc){
-  const cached=LS.get("op_odb_"+id);if(cached){OD[id]=cached.o;ODSRC[id]=cached.src;return{ok:true,o:cached.o}}
+  const cached=LS.get("op_odb_"+id);if(cached){OD[id]=cached.o;ODSRC[id]=cached.src;setNBAL(h,a,cached.o);return{ok:true,o:cached.o}}
   const t=new Date(utc).getTime(),d1=new Date(t-864e5/2).toISOString().slice(0,10),d2=new Date(t+864e5).toISOString().slice(0,10),ck="op_fxb_"+d1;
   let fx=LS.get(ck);
   if(!fx){fx=await opget(`fixtures?sportId=11&from=${d1}&to=${d2}&hasOdds=true`);LS.set(ck,fx,3*36e5)}
@@ -455,12 +470,12 @@ async function oddsForNBA2(id,h,a,utc){
   await catalogB();const R=nbaKeys();
   if(!Object.keys(R).length)return{ok:false,msg:"No pude identificar los mercados de NBA en OddsPapi."};
   const mk=[...new Set(Object.values(R).map(r=>r[0]))].join(",");
-  await gate();const od=await fetch("/.netlify/functions/op?p="+encodeURIComponent(`odds?fixtureId=${best.fixtureId||best.id}`)+"&mk="+mk).then(async r=>{if(!r.ok){let m="";try{const j=await r.json();m=(j.error||"")+(j.detalle?" · "+String(j.detalle).replace(/<[^>]*>/g,"").slice(0,90):"")}catch(e){}throw new Error(r.status+(m?": "+m:""))}return r.json()});
+  const od=await oddsCall(best.fixtureId||best.id,mk);
   const books=od.odds||{};
   if(!Object.keys(books).length)return{ok:false,msg:"Ninguna casa publicó cuotas para este partido todavía."};
   const {o,src}=pickPrices(books,R);
   if(!Object.keys(o).length)return{ok:false,msg:"Las casas no ofrecen estos mercados para este partido."};
-  OD[id]=o;ODSRC[id]=src;LS.set("op_odb_"+id,{o,src},2*36e5);
+  OD[id]=o;ODSRC[id]=src;setNBAL(h,a,o);LS.set("op_odb_"+id,{o,src,h,a},2*36e5);
   return{ok:true,o};
 }
 
